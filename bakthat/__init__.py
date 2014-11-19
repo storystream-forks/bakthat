@@ -2,7 +2,7 @@
 import tarfile
 import tempfile
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from getpass import getpass
 import logging
 import hashlib
@@ -158,23 +158,25 @@ def rotate_backups(filename, destination=None, profile="default", config=CONFIG_
         rotate_kwargs[k] = int(v)
     rotate_kwargs["firstweekday"] = int(rotate.conf["first_week_day"])
     rotate_kwargs["now"] = datetime.utcnow()
-
+    protected_date = datetime.utcnow() - timedelta(days=rotate_kwargs.pop("preserve_days"))
     to_delete = grandfatherson.to_delete(backups_date, **rotate_kwargs)
     for delete_date in to_delete:
-        try:
-            backup_date = int(delete_date.strftime("%s"))
-            backup = Backups.search(filename, destination, backup_date=backup_date, profile=profile, config=config).get()
+        if delete_date < protected_date:
+            try:
+                backup_date = int(delete_date.strftime("%s"))
+                backup = Backups.search(filename, destination, backup_date=backup_date, profile=profile, config=config).get()
 
-            if backup:
-                real_key = backup.stored_filename
-                log.info("Deleting {0}".format(real_key))
+                if backup:
+                    real_key = backup.stored_filename
+                    log.info("Deleting {0}".format(real_key))
 
-                storage_backend.delete(real_key)
-                backup.set_deleted()
-                deleted.append(backup)
-        except Exception, exc:
-            log.error("Error when deleting {0}".format(backup))
-            log.exception(exc)
+                    storage_backend.delete(real_key)
+                    backup.set_deleted()
+                    deleted.append(backup)
+                pass
+            except Exception, exc:
+                log.error("Error when deleting {0}".format(backup))
+                log.exception(exc)
 
     events.on_rotate_backups(session_id, deleted)
 
@@ -453,6 +455,7 @@ def configure_backups_rotation(profile="default"):
     rotation_conf["rotation"]["days"] = int(raw_input("Number of days to keep: "))
     rotation_conf["rotation"]["weeks"] = int(raw_input("Number of weeks to keep: "))
     rotation_conf["rotation"]["months"] = int(raw_input("Number of months to keep: "))
+    rotation_conf["rotation"]["preserve_days"] = int(raw_input("Number of days to keep all backups: "))
     while 1:
         first_week_day = raw_input("First week day (to calculate wich weekly backup keep, saturday by default): ")
         if first_week_day:
