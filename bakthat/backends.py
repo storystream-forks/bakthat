@@ -15,6 +15,7 @@ from boto.exception import S3ResponseError
 
 from bakthat.conf import config, DEFAULT_LOCATION, CONFIG_FILE
 from bakthat.models import Inventory, Jobs
+from bakthat.s3_multipart_upload import multipart_upload
 
 log = logging.getLogger(__name__)
 
@@ -102,13 +103,24 @@ class S3Backend(BakthatBackend):
         log.info("Upload completion: {0}%".format(percent))
 
     def upload(self, keyname, filename, **kwargs):
-        k = Key(self.bucket)
-        k.key = keyname
-        upload_kwargs = {"reduced_redundancy": kwargs.get("s3_reduced_redundancy", False)}
-        if kwargs.get("cb", True):
-            upload_kwargs = dict(cb=self.cb, num_cb=10)
-        k.set_contents_from_filename(filename, **upload_kwargs)
-        k.set_acl("private")
+        mb_size = os.path.getsize(filename) / 1e6
+
+        # due to S3's default upload restriction being 5GB, if the filesize is greater we need to upload it via
+        # the S3 multipart upload mechanism.
+        # In this case, we will run the multipart upload for files >= 4GB
+        if mb_size < 4000:
+            k = Key(self.bucket)
+            k.key = keyname
+            upload_kwargs = {"reduced_redundancy": kwargs.get("s3_reduced_redundancy", False)}
+            if kwargs.get("cb", True):
+                upload_kwargs = dict(cb=self.cb, num_cb=10)
+            k.set_contents_from_filename(filename, **upload_kwargs)
+            k.set_acl("private")
+        else:
+            multipart_upload(self.bucket, filename, keyname, mb_size,
+                             reduced_redundancy=kwargs.get("s3_reduced_redundancy", False),
+                             acl='private')
+
 
     def ls(self):
         return [key.name for key in self.bucket.get_all_keys()]

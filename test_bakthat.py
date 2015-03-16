@@ -57,7 +57,6 @@ class BakthatTestCase(unittest.TestCase):
         self.assertEqual(kv.get_key(test_key), None)
         self.assertEqual(kv.get_key(test_key2), None)
 
-
     def test_s3_backup_restore(self):
         backup_data = bakthat.backup(self.test_file.name, "s3", password="")
         log.info(backup_data)
